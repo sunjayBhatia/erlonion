@@ -1,5 +1,9 @@
--module(erlonion_sup).
+%% ===================================================================
+%% erlonion_sup.erl
+%% Sunjay Bhatia 4/7/2015
+%% ===================================================================
 
+-module(erlonion_sup).
 -behaviour(supervisor).
 
 %% API
@@ -11,6 +15,7 @@
 %% Helper macro for declaring children of supervisor
 -define(CHILD(I, Type), {I, {I, start_link, []}, permanent, 5000, Type, [I]}).
 
+
 %% ===================================================================
 %% API functions
 %% ===================================================================
@@ -18,10 +23,10 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
+
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
 
 init([]) ->
     {ok, { {one_for_one, 5, 10}, []} }.
-
