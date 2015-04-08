@@ -9,8 +9,8 @@ build: deps
 	$(REBAR) compile
 deps:
 	$(REBAR) get-deps
-# run: build
-	# ./start.sh
+run: build
+	./start.sh
 all:
 	$(REBAR) compile
 clean:
