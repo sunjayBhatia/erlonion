@@ -43,8 +43,13 @@ init(Ref, Socket, Transport, _Opts = []) ->
 handle_info({tcp, Socket, Data}, State=#state{socket=Socket, transport=Transport}) ->
     ok = Transport:setopts(Socket, [{active, once}]),
     io:format("data: ~p~n", [erlonion_parse:http_request(Data)]),
+    % start new process to handle data?
+        % parse request and get the hostname of server we want content from
+        % connect to server, send http request
     Transport:send(Socket, Data), % do case
     {noreply, State, ?TIMEOUT};
+% handl_info({this_from_childsdjfksh, Socket, <<HTTP/>>})
+    % we have our tcp connection and our response, send back to client on socket
 handle_info({tcp_closed, _Socket}, State) ->
     {stop, normal, State};
 handle_info({tcp_error, _, Reason}, State) ->
