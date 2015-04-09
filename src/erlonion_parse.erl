@@ -5,7 +5,7 @@
 -module(erlonion_parse).
 
 %% API
--export([http_request/1]).
+-export([http_request/1, http_get_host/1]).
 
 %% Macros
 % -define()
@@ -14,6 +14,9 @@
 %% ===================================================================
 %% API Functions
 %% ===================================================================
+
+http_get_host({_ReqLine, HeaderFields, _Body}) ->
+    binary_to_list(proplists:get_value(<<"Host">>, HeaderFields)).
 
 http_request(ReqBin) ->
     [ReqLine | ReqHds] = binary:split(ReqBin, <<"\r\n">>, [global]),
