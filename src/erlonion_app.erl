@@ -26,9 +26,8 @@ start(_StartType, _StartArgs) ->
                _ -> 0
            end,
     TransOpts = [{port, Port}],
-    io:format("port: ~p~n", [Port]),
     Protocol = erlonion_protocol,
-    ProtoOpts = [{port, Port}], % ??
+    ProtoOpts = [], % ??
     case ranch:start_listener(Ref, NbAcceptors, Transport, TransOpts, Protocol, ProtoOpts) of
         {ok, _Pid} -> ok;
         {error, badarg} -> error % print error message and die

@@ -30,7 +30,7 @@ start_link(Ref, Socket, Transport, Opts) ->
 %% Gen Server Callbacks
 %% ===================================================================
 
--record(state, {socket, port, transport}).
+-record(state, {socket, transport}).
 
 init([]) -> {ok, undefined}.
 
@@ -40,10 +40,19 @@ init(Ref, Socket, Transport, Opts) ->
     ok = ranch:accept_ack(Ref),
     ok = Transport:setopts(Socket, [{active, once}]),
     gen_server:enter_loop(?MODULE, [],
-        #state{socket=Socket, port=proplists:get_value(port, Opts), transport=Transport},
+        #state{socket=Socket, transport=Transport},
         ?TIMEOUT).
 
-handle_info({tcp, Socket, Data}, State=#state{socket=Socket, port=Port, transport=Transport}) ->
+recv_loop(Transport, SocketRec, SocketSend) ->
+    case Transport:recv(SocketRec, 0, 5000) of
+        {ok, Data} ->
+            io:format("server returned: ~p~n", [Data]),
+            Transport:send(SocketSend, Data),
+            recv_loop(Transport, SocketRec, SocketSend);
+        _ -> Transport:close(SocketRec)
+    end.
+
+handle_info({tcp, Socket, Data}, State=#state{socket=Socket, transport=Transport}) ->
     ok = Transport:setopts(Socket, [{active, once}]),
     <<Type:4/binary, _Rest/binary>> = Data,
     io:format("type: ~p~n", [Type]),
@@ -54,13 +63,11 @@ handle_info({tcp, Socket, Data}, State=#state{socket=Socket, port=Port, transpor
             io:format("hostname: ~p~n", [HostName]),
             {ok, {hostent, HName, _, _, _, [_HostIP | _]}} = inet:gethostbyname(HostName),
             io:format("host name: ~p~n", [HName]),
-            case gen_tcp:connect(HName, Port, [binary, {active, false}, {packet, raw}], 5000) of
+            case gen_tcp:connect(HName, 80, [binary, {active, false}, {nodelay, true}, {packet, raw}], 5000) of
                 {ok, NewSocket} ->
                     io:format("new socket: ~p~n", [NewSocket]),
                     Transport:send(NewSocket, Data),
-                    {ok, Pkt} = Transport:recv(NewSocket, 5000, 5000),
-                    io:format("server returned: ~p~n", [Pkt]),
-                    Transport:send(Socket, Pkt);
+                    recv_loop(Transport, NewSocket, Socket);
                 _ -> io:format("timed out or error connecting to server~n")
             end;
         <<"HTTP">> -> % HTTP response from destination server
