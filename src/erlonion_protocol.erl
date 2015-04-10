@@ -22,8 +22,8 @@
 %% API Functions
 %% ===================================================================
 
-start_link(Ref, Socket, Transport, Opts) ->
-    proc_lib:start_link(?MODULE, init, [Ref, Socket, Transport, Opts]).
+start_link(Ref, Sock, Transport, Opts) ->
+    proc_lib:start_link(?MODULE, init, [Ref, Sock, Transport, Opts]).
 
 
 %% ===================================================================
@@ -34,72 +34,40 @@ start_link(Ref, Socket, Transport, Opts) ->
 
 init([]) -> {ok, undefined}.
 
-init(Ref, Socket, Transport, Opts) ->
-    io:format("opts: ~p~n", [Opts]),
+init(Ref, Sock, Transport, _Opts) ->
     ok = proc_lib:init_ack({ok, self()}),
     ok = ranch:accept_ack(Ref),
-    ok = Transport:setopts(Socket, [{active, once}]),
+    ok = Transport:setopts(Sock, [{active, once}]),
     gen_server:enter_loop(?MODULE, [],
-        #state{socket=Socket, transport=Transport},
+        #state{socket=Sock, transport=Transport},
         ?TIMEOUT).
 
-recv_loop(Transport, SocketRec, SocketSend) ->
-    case Transport:recv(SocketRec, 0, 5000) of
-        {ok, Data} ->
-            io:format("server returned: ~p~n", [Data]),
-            Transport:send(SocketSend, Data),
-            recv_loop(Transport, SocketRec, SocketSend);
-        _ -> Transport:close(SocketRec)
-    end.
-
-handle_info({tcp, Socket, Data}, State=#state{socket=Socket, transport=Transport}) ->
-    ok = Transport:setopts(Socket, [{active, once}]),
-    <<Type:4/binary, _Rest/binary>> = Data,
-    io:format("type: ~p~n", [Type]),
-    case Type of
-        <<"GET ">> ->
-            % start new process later
-            HostName = erlonion_parse:http_get_host(erlonion_parse:http_request(Data)),
-            io:format("hostname: ~p~n", [HostName]),
-            {ok, {hostent, HName, _, _, _, [_HostIP | _]}} = inet:gethostbyname(HostName),
-            io:format("host name: ~p~n", [HName]),
-            case gen_tcp:connect(HName, 80, [binary, {active, false}, {nodelay, true}, {packet, raw}], 5000) of
-                {ok, NewSocket} ->
-                    io:format("new socket: ~p~n", [NewSocket]),
-                    Transport:send(NewSocket, Data),
-                    recv_loop(Transport, NewSocket, Socket);
-                _ -> io:format("timed out or error connecting to server~n")
-            end;
-        <<"HTTP">> -> % HTTP response from destination server
-            case Transport:send(Socket, Data) of
-                ok -> ok;
-                {error, _} -> io:format("error sending~n")
-            end;
-            % eventually this case could be encrypted responses from our onion network
-        _D -> io:format("not get data: ~p~n", [_D]) % decode message and check unique header id, if there continue, else
-                                    % throw message away and close the connection
-    end,
-    % start new process to handle data?
-        % parse request and get the hostname of server we want content from
-        % connect to server, send http request
+handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport}) ->
+    ok = Transport:setopts(Sock, [{active, once}]),
+    % start a msghandler process so we can go on our way accepting requests
+    % and send it necessary info to work on getting a response
+    {ok, MsgHandlerPid} = erlonion_msghandler_sup:start_msghandler(),
+    gen_server:cast(MsgHandlerPid, {tcp_msg, self(), Data, Transport}),
     {noreply, State, ?TIMEOUT};
-% handle_info({this_from_childsdjfksh, Socket, <<HTTP/>>})
-    % we have our tcp connection and our response, send back to client on socket
-handle_info({tcp_closed, _Socket}, State) ->
-    io:format("tcp_closed~n", []),
+handle_info({tcp_closed, _Sock}, State) ->
     {stop, normal, State};
 handle_info({tcp_error, _, Reason}, State) ->
-    io:format("tcp_error~n", []),
     {stop, Reason, State};
 handle_info(timeout, State) ->
-    io:format("timeout~n", []),
     {stop, normal, State};
 handle_info(_Info, State) ->
     {stop, normal, State}.
 
-handle_call(_Request, _From, State) -> {reply, ok, State}.
 
-handle_cast(_Msg, State) -> {noreply, State}.
+handle_cast({http_response, Data}, State=#state{socket=Sock, transport=Transport}) ->
+    % we have a valid HTTP response we can send back to the client
+    Transport:send(Sock, Data),
+    {noreply, State};
+handle_cast(_Msg, State) ->
+    io:format("erlonion_protocol handle_cast: ~p~n", [_Msg]),
+    {noreply, State}.
+
+handle_call(_Request, _From, State) -> {reply, ok, State}.
 
 terminate(_Reason, _State) -> ok.
 
