@@ -58,7 +58,6 @@ handle_info(timeout, State) ->
 handle_info(_Info, State) ->
     {stop, normal, State}.
 
-
 handle_cast({http_response, Data}, State=#state{socket=Sock, transport=Transport}) ->
     % we have a valid HTTP response we can send back to the client
     Transport:send(Sock, Data),
