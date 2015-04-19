@@ -1,13 +1,13 @@
 %% ===================================================================
-%% erlonion_msghandler_sup.erl
+%% erlonion_sup.erl
 %% Sunjay Bhatia 4/7/2015
 %% ===================================================================
 
--module(erlonion_msghandler_sup).
+-module(erlonion_sup).
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, start_msghandler/0]).
+-export([start_link/2, start_msghandler/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -17,7 +17,11 @@
 %% API functions
 %% ===================================================================
 
-start_link() ->
+start_link(Protocol, Transport) ->
+    case erlang:function_exported(Protocol, register_node, 1) of
+        true -> Protocol:register_node(Transport);
+        false -> ok
+    end,
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 start_msghandler() ->
@@ -29,6 +33,10 @@ start_msghandler() ->
 %% ===================================================================
 
 init([]) ->
+    % local storage for connected process info
+    TableOpts = [ordered_set, public, named_table],
+    erlonion_ets = ets:new(erlonion_ets, TableOpts),
+
     RestartStrategy = simple_one_for_one,
     MaxRestarts = 10,
     MaxSecondsBetweenRestarts = 10,

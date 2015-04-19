@@ -1,9 +1,9 @@
 %% ===================================================================
-%% erlonion_protocol.erl
+%% erlonion_directory.erl
 %% Sunjay Bhatia 4/7/2015
 %% ===================================================================
 
--module(erlonion_protocol).
+-module(erlonion_directory).
 -behaviour(gen_server).
 -behaviour(ranch_protocol).
 
@@ -16,6 +16,7 @@
 
 %% Macros
 -define(TIMEOUT, 5000).
+-define(TAB, erlonion_ets).
 
 
 %% ===================================================================
@@ -46,7 +47,7 @@ handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport}) -
     ok = Transport:setopts(Sock, [{active, once}]),
     % start a msghandler process so we can go on our way accepting requests
     % and send it necessary info to work on getting a response
-    {ok, MsgHandlerPid} = erlonion_msghandler_sup:start_msghandler(),
+    {ok, MsgHandlerPid} = erlonion_sup:start_msghandler(),
     gen_server:cast(MsgHandlerPid, {tcp_msg, self(), Data, Transport}),
     {noreply, State, ?TIMEOUT};
 handle_info({tcp_closed, _Sock}, State) ->
@@ -63,7 +64,7 @@ handle_cast({http_response, Data}, State=#state{socket=Sock, transport=Transport
     Transport:send(Sock, Data),
     {noreply, State};
 handle_cast(_Msg, State) ->
-    io:format("erlonion_protocol handle_cast: ~p~n", [_Msg]),
+    io:format("erlonion_directory handle_cast: ~p~n", [_Msg]),
     {noreply, State}.
 
 handle_call(_Request, _From, State) -> {reply, ok, State}.
@@ -71,3 +72,4 @@ handle_call(_Request, _From, State) -> {reply, ok, State}.
 terminate(_Reason, _State) -> ok.
 
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
+

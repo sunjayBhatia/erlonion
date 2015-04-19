@@ -15,23 +15,22 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
-    % lager:start(),
-    % lager:error("Some message"),
-
     Ref = erlonion,
-    NbAcceptors = 100, % get from application env?
+    NbAcceptors = get_env_val(num_acceptors, 20),
     Transport  = ranch_tcp,
     Port = get_env_val(port, 0),
     TransOpts = [{port, Port}],
-    Protocol = erlonion_protocol,
-    ProtoOpts = [], % ??
+    Protocol = case get_env_val(type, path) of
+                   directory -> erlonion_directory;
+                   path -> erlonion_path;
+                   _ -> error % print error message and die
+               end,
+    ProtoOpts = [],
     case ranch:start_listener(Ref, NbAcceptors, Transport, TransOpts, Protocol, ProtoOpts) of
         {ok, _Pid} -> ok;
-        {error, badarg} -> error % print error message and die
+        _ -> error % print error message and die
     end,
-    % ranch takes care of supervising our tcp listen/accept processes
-    % we need to supervise the message parsing/fetching processes
-    erlonion_msghandler_sup:start_link().
+    erlonion_sup:start_link(Protocol, Transport).
 
 stop(_State) ->
     ok.
