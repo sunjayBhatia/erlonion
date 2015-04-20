@@ -1,9 +1,9 @@
 %% ===================================================================
-%% erlonion_msghandler.erl
+%% erlonion_path_msghandler.erl
 %% Sunjay Bhatia 4/10/2015
 %% ===================================================================
 
--module(erlonion_msghandler).
+-module(erlonion_path_msghandler).
 -behaviour(gen_server).
 
 %% API

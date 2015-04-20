@@ -1,9 +1,9 @@
 %% ===================================================================
-%% erlonion_directory.erl
+%% erlonion_dir.erl
 %% Sunjay Bhatia 4/7/2015
 %% ===================================================================
 
--module(erlonion_directory).
+-module(erlonion_dir).
 -behaviour(gen_server).
 -behaviour(ranch_protocol).
 
@@ -45,9 +45,7 @@ init(Ref, Sock, Transport, _Opts) ->
 
 handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport}) ->
     ok = Transport:setopts(Sock, [{active, once}]),
-    % start a msghandler process so we can go on our way accepting requests
-    % and send it necessary info to work on getting a response
-    {ok, MsgHandlerPid} = erlonion_sup:start_msghandler(),
+    {ok, MsgHandlerPid} = erlonion_sup:start_dir_msghandler(),
     gen_server:cast(MsgHandlerPid, {tcp_msg, self(), Data, Transport}),
     {noreply, State, ?TIMEOUT};
 handle_info({tcp_closed, _Sock}, State) ->
@@ -59,12 +57,8 @@ handle_info(timeout, State) ->
 handle_info(_Info, State) ->
     {stop, normal, State}.
 
-handle_cast({http_response, Data}, State=#state{socket=Sock, transport=Transport}) ->
-    % we have a valid HTTP response we can send back to the client
-    Transport:send(Sock, Data),
-    {noreply, State};
 handle_cast(_Msg, State) ->
-    io:format("erlonion_directory handle_cast: ~p~n", [_Msg]),
+    io:format("erlonion_dir handle_cast: ~p~n", [_Msg]),
     {noreply, State}.
 
 handle_call(_Request, _From, State) -> {reply, ok, State}.

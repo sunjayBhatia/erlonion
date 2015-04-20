@@ -27,7 +27,10 @@ start_link(Ref, Sock, Transport, Opts) ->
     proc_lib:start_link(?MODULE, init, [Ref, Sock, Transport, Opts]).
 
 register_node(Transport) ->
-    {HostName, Port} = erlonion_app:get_env_val(dir_addr, {error, none}),
+    {HostName, Port} = case erlonion_app:get_env_val(dir_addr, {error, none}) of
+                           {error, none} -> {error, none}; % throw/print error and die
+                           _DirAddr -> _DirAddr
+                       end,
     {ok, {hostent, HName, _, _, _, _}} = inet:gethostbyname(HostName),
     case gen_tcp:connect(HName, Port, [binary, {active, once}, {nodelay, true}, {packet, raw}], 5000) of
         {ok, NewSock} ->
@@ -57,9 +60,7 @@ init(Ref, Sock, Transport, Opts) ->
 
 handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport}) ->
     ok = Transport:setopts(Sock, [{active, once}]),
-    % start a msghandler process so we can go on our way accepting requests
-    % and send it necessary info to work on getting a response
-    {ok, MsgHandlerPid} = erlonion_sup:start_msghandler(),
+    {ok, MsgHandlerPid} = erlonion_sup:start_path_msghandler(),
     gen_server:cast(MsgHandlerPid, {tcp_msg, self(), Data, Transport}),
     {noreply, State, ?TIMEOUT};
 handle_info({tcp_closed, _Sock}, State) ->

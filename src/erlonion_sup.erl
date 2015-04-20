@@ -7,25 +7,37 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/2, start_msghandler/0]).
+-export([start_link/0, start_path_msghandler/0, start_dir_msghandler/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
+
+%% Macros
+-define(RESTART_STRATEGY, one_for_one).
+-define(MAX_RESTARTS, 10).
+-define(MAX_SECS_BTW_RESTARTS, 10).
+-define(SUP_FLAGS, {?RESTART_STRATEGY, ?MAX_RESTARTS, ?MAX_SECS_BTW_RESTARTS}).
+-define(RESTART, permanent).
+-define(SHUTDOWN, brutal_kill).
+-define(TYPE, worker).
+-define(PATH_MSGHANDLER_CHILD, {erlonion_path_msghandler, {erlonion_path_msghandler, start_link, []},
+                                   ?RESTART, ?SHUTDOWN, ?TYPE, [erlonion_path_msghandler]}).
+-define(DIR_MSGHANDLER_CHILD, {erlonion_dir_msghandler, {erlonion_dir_msghandler, start_link, []},
+                                  ?RESTART, ?SHUTDOWN, ?TYPE, [erlonion_dir_msghandler]}).
 
 
 %% ===================================================================
 %% API functions
 %% ===================================================================
 
-start_link(Protocol, Transport) ->
-    case erlang:function_exported(Protocol, register_node, 1) of
-        true -> Protocol:register_node(Transport);
-        false -> ok
-    end,
+start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-start_msghandler() ->
-    supervisor:start_child(?MODULE, []).
+start_path_msghandler() ->
+    supervisor:start_child(?MODULE, [?PATH_MSGHANDLER_CHILD]).
+
+start_dir_msghandler() ->
+    supervisor:start_child(?MODULE, [?DIR_MSGHANDLER_CHILD]).
 
 
 %% ===================================================================
@@ -33,17 +45,4 @@ start_msghandler() ->
 %% ===================================================================
 
 init([]) ->
-    % local storage for connected process info
-    TableOpts = [ordered_set, public, named_table],
-    erlonion_ets = ets:new(erlonion_ets, TableOpts),
-
-    RestartStrategy = simple_one_for_one,
-    MaxRestarts = 10,
-    MaxSecondsBetweenRestarts = 10,
-    SupFlags = {RestartStrategy, MaxRestarts, MaxSecondsBetweenRestarts},
-    Restart = permanent,
-    Shutdown = brutal_kill,
-    Type = worker,
-    AChild = {erlonion_msghandler, {erlonion_msghandler, start_link, []},
-                Restart, Shutdown, Type, [erlonion_msghandler]},
-    {ok, {SupFlags, [AChild]}}.
+    {ok, {?SUP_FLAGS, []}}.
