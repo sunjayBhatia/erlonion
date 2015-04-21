@@ -7,7 +7,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, start_path_msghandler/0, start_dir_msghandler/0]).
+-export([start_link/0, start_path_msghandler/0, start_dir_msghandler/0, stop_child/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -20,9 +20,9 @@
 -define(RESTART, permanent).
 -define(SHUTDOWN, brutal_kill).
 -define(TYPE, worker).
--define(PATH_MSGHANDLER_CHILD, {erlonion_path_msghandler, {erlonion_path_msghandler, start_link, []},
+-define(PATH_MSGHANDLER_CHILD(Id), {{erlonion_path_msghandler, Id}, {erlonion_path_msghandler, start_link, []},
                                    ?RESTART, ?SHUTDOWN, ?TYPE, [erlonion_path_msghandler]}).
--define(DIR_MSGHANDLER_CHILD, {erlonion_dir_msghandler, {erlonion_dir_msghandler, start_link, []},
+-define(DIR_MSGHANDLER_CHILD(Id), {{erlonion_dir_msghandler, Id}, {erlonion_dir_msghandler, start_link, []},
                                   ?RESTART, ?SHUTDOWN, ?TYPE, [erlonion_dir_msghandler]}).
 
 
@@ -34,10 +34,18 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 start_path_msghandler() ->
-    supervisor:start_child(?MODULE, [?PATH_MSGHANDLER_CHILD]).
+    Id = ets:update_counter(erlonion_subproc_ids, path_msghandler, 1),
+    {ok, Pid} = supervisor:start_child(?MODULE, ?PATH_MSGHANDLER_CHILD(Id)),
+    {ok, Pid, {erlonion_path_msghandler, Id}}.
 
 start_dir_msghandler() ->
-    supervisor:start_child(?MODULE, [?DIR_MSGHANDLER_CHILD]).
+    Id = ets:update_counter(erlonion_subproc_ids, dir_msghandler, 1),
+    {ok, Pid} = supervisor:start_child(?MODULE, ?DIR_MSGHANDLER_CHILD(Id)),
+    {ok, Pid, {erlonion_dir_msghandler, Id}}.
+
+stop_child(ChildId) ->
+    supervisor:terminate_child(erlonion_sup, ChildId),
+    supervisor:delete_child(erlonion_sup, ChildId).
 
 
 %% ===================================================================
@@ -45,4 +53,9 @@ start_dir_msghandler() ->
 %% ===================================================================
 
 init([]) ->
+    % local storage for generating unique process ids
+    TableOpts = [public, named_table],
+    ets:new(erlonion_subproc_ids, TableOpts),
+    ets:insert(erlonion_subproc_ids, {path_msghandler, -1}),
+    ets:insert(erlonion_subproc_ids, {dir_msghandler, -1}),
     {ok, {?SUP_FLAGS, []}}.

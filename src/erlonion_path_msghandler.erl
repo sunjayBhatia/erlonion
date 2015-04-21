@@ -13,6 +13,11 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
+%% Macros
+-define(TIMEOUT, 5000).
+-define(TCP_OPTS, [binary, {active, once}, {nodelay, true}, {reuseaddr, true}, {packet, raw}]).
+-define(HTTP_SOCK, 80).
+
 
 %% ===================================================================
 %% API Functions
@@ -26,13 +31,14 @@ start_link() ->
 %% Gen Server Callbacks
 %% ===================================================================
 
--record(state, {s}).
+-record(state, {parent, socket, transport}).
 
 init(_) ->
-    {ok, #state{s=0}}.
+    {ok, #state{parent=none, socket=none, transport=none}}.
 
-handle_info({tcp, _Sock, Data}, State) ->
-    io:format("tcp message: ~p~n", [Data]),
+handle_info({tcp, Sock, Data}, State=#state{parent=Parent, socket=Sock, transport=Transport}) ->
+    ok = Transport:setopts(Sock, [{active, once}]),
+    gen_server:cast(Parent, {http_response, Data}),
     {noreply, State};
 handle_info({tcp_closed, _Sock}, State) ->
     {stop, normal, State};
@@ -43,26 +49,20 @@ handle_info(timeout, State) ->
 handle_info(_Info, State) ->
     {stop, normal, State}.
 
-recv_loop(Transport, SockRec, RetData) ->
-    case Transport:recv(SockRec, 0, 5000) of
-        {ok, Data} ->
-            recv_loop(Transport, SockRec, <<RetData/binary, Data/binary>>);
-        _ -> RetData
-    end.
-
-handle_cast({tcp_msg, Parent, Data = <<"GET", _Rest/binary>>, Transport}, State) ->
+handle_cast({tcp, Parent, Data = <<"GET", _Rest/binary>>, Transport}, State) ->
     HostName = erlonion_parse:http_get_fieldval(<<"Host">>, erlonion_parse:http_request(Data), <<>>),
     {ok, {hostent, HName, _, _, _, _}} = inet:gethostbyname(HostName),
-    case gen_tcp:connect(HName, 80, [binary, {active, false}, {nodelay, true}, {packet, raw}], 5000) of
+    case gen_tcp:connect(HName, ?HTTP_SOCK, ?TCP_OPTS, ?TIMEOUT) of
         {ok, NewSock} ->
             Transport:send(NewSock, Data),
-            gen_server:cast(Parent, {http_response, recv_loop(Transport, NewSock, <<>>)});
+            NewState = State#state{parent=Parent, socket=NewSock, transport=Transport};
         _ ->
-            io:format("timed out or error connecting to server~n"),
+            NewState = State#state{socket=none, transport=Transport},
             gen_server:cast(Parent, timeout)
     end,
-    {noreply, State};
+    {noreply, NewState};
 handle_cast(_Msg, State) ->
+    io:format("~p~n", [_Msg]),
     {noreply, State}.
 
 handle_call(_Request, _From, State) -> {reply, ok, State}.

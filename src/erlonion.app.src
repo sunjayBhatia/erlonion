@@ -1,13 +1,13 @@
 {application, erlonion,
  [
   {description, ""},
-  {vsn, "1"},
+  {vsn, "1.0"},
   {registered, []},
   {applications, [
                   kernel,
                   stdlib,
                   ranch
                  ]},
-  {mod, { erlonion_app, []}},
+  {mod, {erlonion_app, []}},
   {env, []}
  ]}.
