@@ -49,7 +49,7 @@ handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport, ms
     gen_server:cast(MsgHandlerPid, {tcp, self(), Data, Transport}),
     {noreply, State#state{msghandlers=[MsgHandlerId | MsgHandlers]}, ?TIMEOUT};
 handle_info(Info, State=#state{socket=_, transport=_, msghandlers=MsgHandlers}) ->
-    lists:map(fun erlonion_sup:stop_child/1, MsgHandlers),
+    % lists:map(fun erlonion_sup:stop_child/1, MsgHandlers),
     case Info of
         {tcp_closed, _Sock} -> {stop, normal, State};
         {tcp_error, _, Reason} -> {stop, Reason, State};

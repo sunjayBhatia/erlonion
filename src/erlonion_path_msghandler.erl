@@ -38,6 +38,9 @@ init(_) ->
 
 handle_info({tcp, Sock, Data}, State=#state{parent=Parent, socket=Sock, transport=Transport}) ->
     ok = Transport:setopts(Sock, [{active, once}]),
+    TransResp = erlonion_parse:http_transform_resp(Data),
+    io:format("response: ~p~n", [Data]),
+    io:format("trans resp: ~p~n", [TransResp]),
     gen_server:cast(Parent, {http_response, Data}),
     {noreply, State};
 handle_info({tcp_closed, _Sock}, State) ->
@@ -50,7 +53,9 @@ handle_info(_Info, State) ->
     {stop, normal, State}.
 
 handle_cast({tcp, Parent, Data = <<"GET", _Rest/binary>>, Transport}, State) ->
-    HostName = erlonion_parse:http_get_fieldval(<<"Host">>, erlonion_parse:http_request(Data), <<>>),
+    TransReq = erlonion_parse:http_transform_req(Data),
+    % io:format("~p~n", [TransReq]),
+    HostName = erlonion_parse:http_get_fieldval(true, <<"Host">>, TransReq, <<>>),
     {ok, {hostent, HName, _, _, _, _}} = inet:gethostbyname(HostName),
     case gen_tcp:connect(HName, ?HTTP_SOCK, ?TCP_OPTS, ?TIMEOUT) of
         {ok, NewSock} ->
@@ -62,7 +67,6 @@ handle_cast({tcp, Parent, Data = <<"GET", _Rest/binary>>, Transport}, State) ->
     end,
     {noreply, NewState};
 handle_cast(_Msg, State) ->
-    io:format("~p~n", [_Msg]),
     {noreply, State}.
 
 handle_call(_Request, _From, State) -> {reply, ok, State}.
