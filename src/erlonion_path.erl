@@ -60,7 +60,7 @@ handle_cast({http_response, Data}, State=#state{socket=Sock, transport=Transport
     Transport:send(Sock, Data),
     {noreply, State};
 handle_cast(_Msg, State) ->
-    {noreply, State}.
+    {stop, normal, State}.
 
 handle_call(_Request, _From, State) -> {reply, ok, State}.
 
