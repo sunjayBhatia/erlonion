@@ -15,6 +15,7 @@
 
 %% Macros
 -define(TIMEOUT, 5000).
+-define(RECV_TIMEOUT, 1000).
 -define(TCP_OPTS, [binary, {active, false}, {nodelay, true}, {reuseaddr, true}, {packet, raw}]).
 -define(HTTP_SOCK, 80).
 
@@ -48,7 +49,7 @@ handle_cast({tcp, Parent, Data, Transport}, State) ->
             case gen_tcp:connect(HName, ?HTTP_SOCK, ?TCP_OPTS, ?TIMEOUT) of
                 {ok, NewSock} ->
                     Transport:send(NewSock, erlonion_parse:http_flatten(TransReq)),
-                    Resp = erlonion_app:recv_loop(Transport, NewSock, <<>>),
+                    Resp = erlonion_app:recv_loop(Transport, NewSock, ?RECV_TIMEOUT, <<>>),
                     % io:format("response: ~p~n", [Resp]),
                     case Resp of
                         <<"HTTP", _Rest/binary>> ->

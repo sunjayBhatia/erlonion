@@ -7,7 +7,7 @@
 -behaviour(application).
 
 %% Application callbacks
--export([start/2, stop/1, recv_loop/3]).
+-export([start/2, stop/1, recv_loop/4, get_env_val/2]).
 
 
 %% ===================================================================
@@ -15,10 +15,10 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
+    % get encryption key seed and generate key
+
     io:format("start erlonion_app~n", []),
     % local storage for connected process info
-    TableOpts = [public, named_table],
-    erlonion_keytab = ets:new(erlonion_keytab, TableOpts),
     % ranch options
     Ref = erlonion_listener,
     NbAcceptors = get_env_val(num_acceptors, 20),
@@ -26,9 +26,12 @@ start(_StartType, _StartArgs) ->
     Port = get_env_val(port, 0),
     TransOpts = [{port, Port}],
     Protocol = case get_env_val(type, path) of
-                   directory -> erlonion_dir;
+                   directory ->
+                       TableOpts = [public, named_table],
+                       erlonion_pathnodes = ets:new(erlonion_pathnodes, TableOpts),
+                       erlonion_dir;
                    path ->
-                       % ok = register_node(Transport),
+                       ok = erlonion_path:register_node(Transport),
                        erlonion_path;
                    _ -> error % print error message and die
                end,
@@ -40,38 +43,18 @@ start(_StartType, _StartArgs) ->
 stop(_State) ->
     ok.
 
-recv_loop(Transport, SockRec, RetData) ->
-    case Transport:recv(SockRec, 0, 1024) of
+recv_loop(Transport, SockRec, Timeout, RetData) ->
+    case Transport:recv(SockRec, 0, Timeout) of
         {ok, Data} ->
-            recv_loop(Transport, SockRec, <<RetData/binary, Data/binary>>);
-        _ -> RetData
+            io:format("got some data~n"),
+            recv_loop(Transport, SockRec, Timeout, <<RetData/binary, Data/binary>>);
+        _ ->
+            io:format("error or end of stream~n"),
+            RetData
     end.
-
-
-%% ===================================================================
-%% Internal Functions
-%% ===================================================================
 
 get_env_val(Key, Default) ->
     case application:get_env(Key) of
         {ok, Val} -> Val;
         _ -> Default
     end.
-
-% register_node(Transport) ->
-    % {HostName, Port} = case erlonion_app:get_env_val(dir_addr, {error, none}) of
-    %                        {error, none} -> {error, none}; % throw/print error and die
-    %                        DirAddr -> DirAddr
-    %                    end,
-    % {ok, MsgHandlerPid} = erlonion_sup:start_path_msghandler(),
-    % gen_server:cast(MsgHandlerPid, {tcp_msg, self(), Data, Transport}),
-    % ok.
-
-    % {ok, {hostent, HName, _, _, _, _}} = inet:gethostbyname(HostName),
-    % case gen_tcp:connect(HName, Port, [binary, {active, once}, {nodelay, true}, {packet, raw}], 5000) of
-    %     {ok, NewSock} ->
-    %         Transport:send(NewSock, "");
-    %     _ ->
-    %         io:format("timed out or error connecting to directory node~n")
-    % end,
-    % ok.

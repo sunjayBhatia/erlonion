@@ -43,8 +43,20 @@ handle_info(timeout, State) ->
 handle_info(_Info, State) ->
     {stop, normal, State}.
 
-handle_cast({tcp_msg, Parent, Data, Transport}, State) ->
+handle_cast({tcp, Parent, Data, Transport}, State) ->
     io:format("handle_cast dir msghandler: ~p~n", [Data]),
+
+    % decode message with common global key
+    % pattern match on type of message
+        % register
+        % path request message
+        % remove
+
+    case Data of
+        <<"Register", _Rest/binary>> ->
+            gen_server:cast(Parent, {register_ack, <<"registered">>}); % add to table
+        _ -> ok
+    end,
     {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.

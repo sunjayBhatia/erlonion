@@ -16,7 +16,8 @@
 
 %% Macros
 -define(TIMEOUT, 5000).
--define(TAB, erlonion_ets).
+-define(RECV_TIMEOUT, 1000).
+-define(TAB, erlonion_pathnodes).
 
 
 %% ===================================================================
@@ -44,9 +45,10 @@ init(Ref, Sock, Transport, _Opts) ->
         ?TIMEOUT).
 
 handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport}) ->
+    DataRest = erlonion_app:recv_loop(Transport, Sock, ?RECV_TIMEOUT, <<>>),
     ok = Transport:setopts(Sock, [{active, once}]),
-    {ok, MsgHandlerPid} = erlonion_sup:start_dir_msghandler(),
-    gen_server:cast(MsgHandlerPid, {tcp_msg, self(), Data, Transport}),
+    {ok, MsgHandlerPid, MsgHandlerId} = erlonion_sup:start_dir_msghandler(),
+    gen_server:cast(MsgHandlerPid, {tcp, self(), <<Data/binary, DataRest/binary>>, Transport}),
     {noreply, State, ?TIMEOUT};
 handle_info({tcp_closed, _Sock}, State) ->
     {stop, normal, State};
@@ -57,9 +59,11 @@ handle_info(timeout, State) ->
 handle_info(_Info, State) ->
     {stop, normal, State}.
 
+handle_cast({register_ack, Data}, State=#state{socket=Sock, transport=Transport}) ->
+    Transport:send(Sock, Data),
+    {noreply, State};
 handle_cast(_Msg, State) ->
-    io:format("erlonion_dir handle_cast: ~p~n", [_Msg]),
-    {noreply, State}.
+    {stop, normal, State}.
 
 handle_call(_Request, _From, State) -> {reply, ok, State}.
 
