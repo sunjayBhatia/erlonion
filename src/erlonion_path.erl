@@ -44,9 +44,10 @@ init(Ref, Sock, Transport, _Opts) ->
         ?TIMEOUT).
 
 handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport, msghandlers=MsgHandlers}) ->
+    DataRest = erlonion_app:recv_loop(Transport, Sock, <<>>),
     ok = Transport:setopts(Sock, [{active, once}]),
     {ok, MsgHandlerPid, MsgHandlerId} = erlonion_sup:start_path_msghandler(),
-    gen_server:cast(MsgHandlerPid, {tcp, self(), Data, Transport}),
+    gen_server:cast(MsgHandlerPid, {tcp, self(), <<Data/binary, DataRest/binary>>, Transport}),
     {noreply, State#state{msghandlers=[MsgHandlerId | MsgHandlers]}, ?TIMEOUT};
 handle_info(Info, State=#state{socket=_, transport=_, msghandlers=MsgHandlers}) ->
     % lists:map(fun erlonion_sup:stop_child/1, MsgHandlers),

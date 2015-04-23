@@ -7,7 +7,7 @@
 -behaviour(application).
 
 %% Application callbacks
--export([start/2, stop/1]).
+-export([start/2, stop/1, recv_loop/3]).
 
 
 %% ===================================================================
@@ -39,6 +39,13 @@ start(_StartType, _StartArgs) ->
 
 stop(_State) ->
     ok.
+
+recv_loop(Transport, SockRec, RetData) ->
+    case Transport:recv(SockRec, 0, 1024) of
+        {ok, Data} ->
+            recv_loop(Transport, SockRec, <<RetData/binary, Data/binary>>);
+        _ -> RetData
+    end.
 
 
 %% ===================================================================
