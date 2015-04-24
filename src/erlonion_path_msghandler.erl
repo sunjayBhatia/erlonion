@@ -39,52 +39,46 @@ init(_) ->
 handle_info(_Msg, State) ->
     {noreply, State}.
 
-handle_cast({tcp, Parent, Data, Transport, DirIP, PrivKey, PubKey, AESKey}, State) ->
-    case Data of
-        <<"GET", _Rest/binary>> -> Decrypt = false;
-        <<"HEAD", _Rest/binary>> -> Decrypt = false;
-        <<"POST", _Rest/binary>> -> Decrypt = false;
-        <<"PUT", _Rest/binary>> -> Decrypt = false;
-        <<"DELETE", _Rest/binary>> -> Decrypt = false;
-        <<"TRACE", _Rest/binary>> -> Decrypt = false;
-        <<"CONNECT", _Rest/binary>> -> Decrypt = false;
-        _ -> Decrypt = true
-    end,
-    case Decrypt of
-        true -> ok;
-        false ->
+handle_cast({tcp, Parent, Data, Transport, DirIP, AESKey, IVec}, State) ->
+    case is_http_req(Data) of
+        true ->
             case gen_tcp:connect(DirIP, ?PORT, ?TCP_OPTS, ?TIMEOUT) of
                 {ok, DirSock} ->
                     Transport:send(DirSock, <<"PATH">>),
                     PathBin = erlonion_app:recv_loop(Transport, DirSock, 2000, <<>>),
                     PathNodes = binary_to_term(PathBin),
+                    [{SendIP, _} | _] = PathNodes,
                     io:format("path nodes ~p~n", [PathNodes]),
                     TransReq = erlonion_parse:http_transform_req(Data),
                     HostName = erlonion_parse:http_get_fieldval(true, <<"Host">>, TransReq, <<>>),
                     case inet:gethostbyname(HostName) of
-                        {ok, {hostent, _, _, _, _, [HostIP | _]}} -> ok;
-                            % LayeredReq = erlonion_app:layer_encrypt_request(PathNodes, HostIP, TransReq)
-
-
-                            % case gen_tcp:connect(HName, ?HTTP_PORT, ?TCP_OPTS, ?TIMEOUT) of
-                            %     {ok, NewSock} ->
-                            %         Transport:send(NewSock, erlonion_parse:http_flatten(TransReq)),
-                            %         Resp = erlonion_app:recv_loop(Transport, NewSock, ?RECV_TIMEOUT, <<>>),
-                            %         % io:format("response: ~p~n", [Resp]),
-                            %         case Resp of
-                            %             <<"HTTP", _Rest/binary>> ->
-                            %                 TransResp = erlonion_parse:http_transform_resp(Resp),
-                            %                 gen_server:cast(Parent, {http_response, erlonion_parse:http_flatten(TransResp)});
-                            %             _ -> gen_server:cast(Parent, {http_response, Resp})
-                            %         end,
-                            %         NewState = State#state{parent=Parent, socket=NewSock, transport=Transport};
-                            %     _ ->
-                            %         NewState = State#state{socket=none, transport=Transport},
-                            %         gen_server:cast(Parent, timeout)
-                            % end;
+                        {ok, {hostent, _, _, _, _, [HostIP | _]}} ->
+                            LayeredReq = erlonion_app:layer_encrypt_request(PathNodes, HostIP, TransReq, IVec),
+                            case gen_tcp:connect(SendIP, ?PORT, ?TCP_OPTS, ?TIMEOUT) of
+                                {ok, NewSock} ->
+                                    Transport:send(NewSock, LayeredReq),
+                                    Resp = erlonion_app:recv_loop(Transport, NewSock, 2000, <<>>),
+                                    HTTPResp = erlonion_app:delayer_encrypt_resp(PathNodes, Resp, IVec),
+                                    gen_server:cast(Parent, {response, HTTPResp});
+                                _ -> gen_server:cast(Parent, timeout)
+                            end;
                         _ -> gen_server:cast(Parent, invalid_host)
                     end;
                 _ -> gen_server:cast(Parent, dir_node_unavailable)
+            end;
+        false ->
+            {IP, Msg} = binary_to_term(crypto:block_decrypt(aes_cfb128, AESKey, IVec, Data)),
+            case is_http_req(Msg) of
+                true -> Port = ?HTTP_PORT;
+                false -> Port = ?PORT
+            end,
+            case gen_tcp:connect(IP, Port, ?TCP_OPTS, ?TIMEOUT) of
+                {ok, NewSock} ->
+                    Transport:send(NewSock, Msg),
+                    Resp = erlonion_app:recv_loop(Transport, NewSock, 2000, <<>>),
+                    RespCrypt = crypto:block_encrypt(aes_cfb128, AESKey, IVec, Resp),
+                    gen_server:cast(Parent, {response, RespCrypt});
+                _ -> gen_server:cast(Parent, invalid_path_host_ip)
             end
     end,
     {noreply, State};
@@ -96,3 +90,14 @@ handle_call(_Request, _From, State) -> {reply, ok, State}.
 terminate(_Reason, _State) -> ok.
 
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
+
+
+
+is_http_req(<<"GET", _Rest/binary>>) -> true;
+is_http_req(<<"HEAD", _Rest/binary>>) -> true;
+is_http_req(<<"POST", _Rest/binary>>) -> true;
+is_http_req(<<"PUT", _Rest/binary>>) -> true;
+is_http_req(<<"DELETE", _Rest/binary>>) -> true;
+is_http_req(<<"TRACE", _Rest/binary>>) -> true;
+is_http_req(<<"CONNECT", _Rest/binary>>) -> true;
+is_http_req(_) -> false.

@@ -52,17 +52,17 @@ register_node(Transport, PrivKey, PubKey, AESKey, IVec) ->
 %% Gen Server Callbacks
 %% ===================================================================
 
--record(state, {socket, transport, dir_addr, priv_key, pub_key, aes_key, msghandlers}).
+-record(state, {socket, transport, dir_addr, aes_key, i_vec, msghandlers}).
 
 init([]) -> {ok, undefined}.
 
-init(Ref, Sock, Transport, [{dir_addr, DirAddr}, {priv_key, PrivKey}, {pub_key, PubKey}, {aes_key, AESKey}]) ->
+init(Ref, Sock, Transport, [{dir_addr, DirAddr}, {aes_key, AESKey},
+                             {i_vec, IVec}]) ->
     ok = proc_lib:init_ack({ok, self()}),
     ok = ranch:accept_ack(Ref),
     ok = Transport:setopts(Sock, [{active, once}]),
     gen_server:enter_loop(?MODULE, [],
-        #state{socket=Sock, transport=Transport, dir_addr=DirAddr, priv_key=PrivKey, pub_key=PubKey,
-               aes_key=AESKey, msghandlers=[]},
+        #state{socket=Sock, transport=Transport, dir_addr=DirAddr, aes_key=AESKey, i_vec=IVec, msghandlers=[]},
         ?TIMEOUT).
 
 handle_info({tcp, Sock, Data}, State) ->
@@ -71,8 +71,7 @@ handle_info({tcp, Sock, Data}, State) ->
     ok = Transport:setopts(Sock, [{active, once}]),
     {ok, MsgHandlerPid, MsgHandlerId} = erlonion_sup:start_path_msghandler(),
     gen_server:cast(MsgHandlerPid, {tcp, self(), <<Data/binary, DataRest/binary>>, Transport,
-                                    State#state.dir_addr, State#state.priv_key, State#state.pub_key,
-                                    State#state.aes_key}),
+                                    State#state.dir_addr, State#state.aes_key, State#state.i_vec}),
     {noreply, State#state{msghandlers=[MsgHandlerId | MsgHandlers]}, ?TIMEOUT};
 handle_info(Info, State) ->
     % lists:map(fun erlonion_sup:stop_child/1, MsgHandlers),
@@ -82,7 +81,7 @@ handle_info(Info, State) ->
         _ -> {stop, normal, State}
     end.
 
-handle_cast({http_response, Data}, State) ->
+handle_cast({response, Data}, State) ->
     Transport = State#state.transport,
     Transport:send(State#state.socket, Data),
     {noreply, State};

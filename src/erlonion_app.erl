@@ -11,7 +11,8 @@
 
 %% Application callbacks
 -export([start/2, stop/1, recv_loop/4, get_env_val/2,
-         pub_encrypt_message/2, priv_decrypt_message/2]).
+         pub_encrypt_message/2, priv_decrypt_message/2,
+         layer_encrypt_message/4, delayer_encrypt_resp/3]).
 
 %% Macros
 -define(PORT, 8080).
@@ -57,7 +58,7 @@ start(_StartType, _StartArgs) ->
                        [RSAPubEntry] = public_key:pem_decode(RSAPubPem),
                        PubKey = public_key:pem_entry_decode(RSAPubEntry),
                        DirAddr = erlonion_path:register_node(Transport, PrivKey, PubKey, AESKey, IVec),
-                       ProtoOpts = [{dir_addr, DirAddr}, {priv_key, PrivKey}, {pub_key, PubKey}, {aes_key, AESKey}],
+                       ProtoOpts = [{dir_addr, DirAddr}, {aes_key, AESKey}, {i_vec, IVec}],
                        erlonion_path;
                    _ -> ProtoOpts = [], error % print error message and die
                end,
@@ -89,3 +90,15 @@ priv_decrypt_message(#'RSAPrivateKey'{version=_V, modulus=M, publicExponent=PubE
                                       exponent1=E1, exponent2=E2, coefficient=C,
                                       otherPrimeInfos=_O}, Message) ->
     crypto:private_decrypt(rsa, Message, [PubE, M, PrivE, P1, P2, E1, E2, C], rsa_pkcs1_padding).
+
+layer_encrypt_message(PathNodes, HostIP, Req, IVec) ->
+    ReqBin = erlonion_parse:http_flatten(Req),
+    [_ | IPList] = lists:map(fun({IP, _}) -> IP end, PathNodes) ++ [HostIP],
+    KeyList = lists:map(fun({_, Key}) -> Key end, PathNodes),
+    lists:foldr(fun({IP, Key}, Accum) ->
+                    crypto:block_encrypt(aes_cfb128, Key, IVec, term_to_binary({IP, Accum})) end,
+                ReqBin, lists:zip(IPList, KeyList)).
+
+delayer_encrypt_resp(PathNodes, Resp, IVec) ->
+    KeyList = lists:map(fun({_, Key}) -> Key end, PathNodes),
+    lists:foldl(fun(Key, Accum) -> crypto:block_decrypt(aes_cfb128, Key, IVec, Accum) end, Resp, KeyList).
