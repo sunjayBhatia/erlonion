@@ -53,7 +53,7 @@ handle_cast({tcp, Parent, Data, Transport, DirIP, AESKey, IVec}, State) ->
                     HostName = erlonion_parse:http_get_fieldval(true, <<"Host">>, TransReq, <<>>),
                     case inet:gethostbyname(HostName) of
                         {ok, {hostent, _, _, _, _, [HostIP | _]}} ->
-                            LayeredReq = erlonion_app:layer_encrypt_request(PathNodes, HostIP, TransReq, IVec),
+                            LayeredReq = erlonion_app:layer_encrypt_message(PathNodes, HostIP, TransReq, IVec),
                             case gen_tcp:connect(SendIP, ?PORT, ?TCP_OPTS, ?TIMEOUT) of
                                 {ok, NewSock} ->
                                     Transport:send(NewSock, LayeredReq),
