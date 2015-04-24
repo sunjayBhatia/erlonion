@@ -14,6 +14,7 @@
          terminate/2, code_change/3]).
 
 %% Macros
+-define(PORT, 8080).
 -define(TIMEOUT, 5000).
 -define(RECV_TIMEOUT, 1000).
 -define(TCP_OPTS, [binary, {active, false}, {nodelay, true}, {reuseaddr, true}, {packet, raw}]).
@@ -38,7 +39,7 @@ init(_) ->
 handle_info(_Msg, State) ->
     {noreply, State}.
 
-handle_cast({tcp, Parent, Data, Transport, {DirIP, DirPort}, PrivKey, PubKey, AESKey}, State) ->
+handle_cast({tcp, Parent, Data, Transport, DirIP, PrivKey, PubKey, AESKey}, State) ->
     case Data of
         <<"GET", _Rest/binary>> -> Decrypt = false;
         <<"HEAD", _Rest/binary>> -> Decrypt = false;
@@ -52,7 +53,7 @@ handle_cast({tcp, Parent, Data, Transport, {DirIP, DirPort}, PrivKey, PubKey, AE
     case Decrypt of
         true -> ok;
         false ->
-            case gen_tcp:connect(DirIP, DirPort, ?TCP_OPTS, ?TIMEOUT) of
+            case gen_tcp:connect(DirIP, ?PORT, ?TCP_OPTS, ?TIMEOUT) of
                 {ok, DirSock} ->
                     Transport:send(DirSock, <<"PATH">>),
                     PathBin = erlonion_app:recv_loop(Transport, DirSock, 2000, <<>>),

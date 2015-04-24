@@ -40,6 +40,7 @@ start_link(Ref, Sock, Transport, Opts) ->
 init([]) -> {ok, undefined}.
 
 init(Ref, Sock, Transport, [{aes_key, AESKey}, {i_vec, IVec}]) ->
+    io:format("start dir proc~n"),
     ok = proc_lib:init_ack({ok, self()}),
     ok = ranch:accept_ack(Ref),
     ok = Transport:setopts(Sock, [{active, once}]),
@@ -53,18 +54,18 @@ handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport, ae
     Req = <<Data/binary, DataRest/binary>>,
     case Req of
         <<"REGISTER", PathPubKeyBin/binary>> ->
-            {ok, {IP, Port}} = inet:peername(Sock),
-            io:format("ip: ~p, port: ~p~n", [IP, Port]),
+            {ok, {IP, _}} = inet:peername(Sock),
+            io:format("ip: ~p~n", [IP]),
             PathPubKey = erlonion_parse:destringify_rsa_public(binary_to_list(PathPubKeyBin)),
             CryptMessage = erlonion_app:pub_encrypt_message(PathPubKey, AESKey),
             Transport:send(Sock, CryptMessage),
             PathAESKeyCrypt = erlonion_app:recv_loop(Transport, Sock, 5000, <<>>),
             PathAESKey = crypto:block_decrypt(aes_cfb128, AESKey, IVec, PathAESKeyCrypt),
-            ets:insert(?TAB, {IP, Port, PathAESKey}),
+            ets:insert(?TAB, {IP, PathAESKey}),
             io:format("path nodes: ~p~n", [ets:tab2list(?TAB)]);
         <<"PATH">> ->
-            {ok, {IP, Port}} = inet:peername(Sock),
-            Path = generate_path(IP, Port),
+            {ok, {IP, _}} = inet:peername(Sock),
+            Path = generate_path(IP),
             Transport:send(Sock, term_to_binary(Path));
         _ -> ok
     end,
@@ -92,9 +93,9 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %% Internal Functions
 %% ===================================================================
 
-generate_path(IP, Port) ->
+generate_path(IP) ->
     PN = ets:tab2list(?TAB),
-    PathNodes = lists:filter(fun({I, P, _}) ->  case {I, P} of {IP, Port} -> false; _ -> true end end, PN),
+    PathNodes = lists:filter(fun({I, _}) ->  case I of IP -> false; _ -> true end end, PN),
     ShuffledPN = shuffle_pathnodes(PathNodes),
     PathLength = random:uniform(length(ShuffledPN)),
     lists:sublist(ShuffledPN, PathLength).

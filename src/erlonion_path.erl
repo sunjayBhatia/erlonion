@@ -15,6 +15,7 @@
          terminate/2, code_change/3]).
 
 %% Macros
+-define(PORT, 8080).
 -define(TIMEOUT, 5000).
 -define(TCP_OPTS, [binary, {active, false}, {nodelay, true}, {reuseaddr, true}, {packet, raw}]).
 -define(RECV_TIMEOUT, 1000).
@@ -28,11 +29,11 @@ start_link(Ref, Sock, Transport, Opts) ->
     proc_lib:start_link(?MODULE, init, [Ref, Sock, Transport, Opts]).
 
 register_node(Transport, PrivKey, PubKey, AESKey, IVec) ->
-    {IpAddr, Port} = case erlonion_app:get_env_val(dir_addr, {error, none}) of
-                           {error, none} -> {error, none}; % throw/print error and die
-                           DirAddr -> DirAddr
-                       end,
-    case gen_tcp:connect(IpAddr, Port, ?TCP_OPTS, ?TIMEOUT) of
+    IpAddr = case erlonion_app:get_env_val(dir_addr, {error, none}) of
+                {error, none} -> {error, none}; % throw/print error and die
+                DirAddr -> DirAddr
+            end,
+    case gen_tcp:connect(IpAddr, ?PORT, ?TCP_OPTS, ?TIMEOUT) of
         {ok, NewSock} ->
             PubKeyBin = list_to_binary(erlonion_parse:stringify_rsa_public(PubKey)),
             Transport:send(NewSock, <<"REGISTER", PubKeyBin/binary>>),
@@ -44,7 +45,7 @@ register_node(Transport, PrivKey, PubKey, AESKey, IVec) ->
         _ -> % print error and die
             io:format("timed out or error connecting to directory node~n")
     end,
-    {IpAddr, Port}.
+    IpAddr.
 
 
 %% ===================================================================

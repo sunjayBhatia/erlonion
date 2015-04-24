@@ -14,6 +14,7 @@
          pub_encrypt_message/2, priv_decrypt_message/2]).
 
 %% Macros
+-define(PORT, 8080).
 -define(NUM_AESKEY_BYTES, 16).
 -define(RSA_OPTS, [{rsa_pad, 'rsa_pkcs1_padding'}]).
 
@@ -37,13 +38,12 @@ start(_StartType, _StartArgs) ->
     Ref = erlonion_listener,
     NbAcceptors = get_env_val(num_acceptors, 20),
     Transport  = ranch_tcp,
-    Port = get_env_val(port, 0),
-    TransOpts = [{port, Port}],
+    TransOpts = [{port, ?PORT}],
     Protocol = case get_env_val(type, path) of
                    directory ->
                        TableOpts = [public, named_table],
                        erlonion_pathnodes = ets:new(erlonion_pathnodes, TableOpts),
-                       ProtoOpts = [{aes_key, AESKey}],
+                       ProtoOpts = [{aes_key, AESKey}, {i_vec, IVec}],
                        erlonion_dir;
                    path ->
                        case get_env_val(rsa_pass, "") of
@@ -62,7 +62,6 @@ start(_StartType, _StartArgs) ->
                    _ -> ProtoOpts = [], error % print error message and die
                end,
     {ok, _Pid} = ranch:start_listener(Ref, NbAcceptors, Transport, TransOpts, Protocol, ProtoOpts),
-    io:format("started ranch listener~n", []),
     erlonion_sup:start_link().
 
 stop(_State) ->
