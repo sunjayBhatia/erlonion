@@ -32,23 +32,34 @@ start_link(Ref, Sock, Transport, Opts) ->
 %% Gen Server Callbacks
 %% ===================================================================
 
--record(state, {socket, transport}).
+-record(state, {socket, transport, priv_key, pub_key}).
 
 init([]) -> {ok, undefined}.
 
-init(Ref, Sock, Transport, _Opts) ->
+init(Ref, Sock, Transport, [{priv_key, PrivKey}, {pub_key, PubKey}, _]) ->
     ok = proc_lib:init_ack({ok, self()}),
     ok = ranch:accept_ack(Ref),
     ok = Transport:setopts(Sock, [{active, once}]),
     gen_server:enter_loop(?MODULE, [],
-        #state{socket=Sock, transport=Transport},
+        #state{socket=Sock, transport=Transport, priv_key=PrivKey, pub_key=PubKey},
         ?TIMEOUT).
 
-handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport}) ->
+handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport,
+                                            priv_key=PrivKey, pub_key=PubKey}) ->
     DataRest = erlonion_app:recv_loop(Transport, Sock, ?RECV_TIMEOUT, <<>>),
     ok = Transport:setopts(Sock, [{active, once}]),
     {ok, MsgHandlerPid, MsgHandlerId} = erlonion_sup:start_dir_msghandler(),
-    gen_server:cast(MsgHandlerPid, {tcp, self(), <<Data/binary, DataRest/binary>>, Sock, Transport}),
+    Req = <<Data/binary, DataRest/binary>>,
+    case Req of
+        <<"REGISTER">> ->
+            {ok, {IP, Port}} = inet:peername(Sock),
+            io:format("ip: ~p, port: ~p~n", [IP, Port]),
+            PubKeyStr = erlonion_parse:stringify_rsa_public(PubKey),
+            Transport:send(Sock, <<PubKeyStr/binary>>);
+            % send public key
+            % wait for response, decrypt and add to list
+        _ -> ok
+    end,
     {noreply, State, ?TIMEOUT};
 handle_info({tcp_closed, _Sock}, State) ->
     {stop, normal, State};
@@ -59,9 +70,6 @@ handle_info(timeout, State) ->
 handle_info(_Info, State) ->
     {stop, normal, State}.
 
-handle_cast({register_ack, Data}, State=#state{socket=Sock, transport=Transport}) ->
-    Transport:send(Sock, Data),
-    {noreply, State};
 handle_cast(_Msg, State) ->
     {stop, normal, State}.
 
