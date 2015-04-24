@@ -48,7 +48,7 @@ handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport}) -
     DataRest = erlonion_app:recv_loop(Transport, Sock, ?RECV_TIMEOUT, <<>>),
     ok = Transport:setopts(Sock, [{active, once}]),
     {ok, MsgHandlerPid, MsgHandlerId} = erlonion_sup:start_dir_msghandler(),
-    gen_server:cast(MsgHandlerPid, {tcp, self(), <<Data/binary, DataRest/binary>>, Transport}),
+    gen_server:cast(MsgHandlerPid, {tcp, self(), <<Data/binary, DataRest/binary>>, Sock, Transport}),
     {noreply, State, ?TIMEOUT};
 handle_info({tcp_closed, _Sock}, State) ->
     {stop, normal, State};

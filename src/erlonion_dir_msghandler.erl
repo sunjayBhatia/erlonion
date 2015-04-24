@@ -43,7 +43,7 @@ handle_info(timeout, State) ->
 handle_info(_Info, State) ->
     {stop, normal, State}.
 
-handle_cast({tcp, Parent, Data, Transport}, State) ->
+handle_cast({tcp, Parent, Data, Sock, Transport}, State) ->
     io:format("handle_cast dir msghandler: ~p~n", [Data]),
 
     % decode message with common global key
@@ -53,8 +53,12 @@ handle_cast({tcp, Parent, Data, Transport}, State) ->
         % remove
 
     case Data of
-        <<"Register", _Rest/binary>> ->
-            gen_server:cast(Parent, {register_ack, <<"registered">>}); % add to table
+        <<"REGISTER">> ->
+            {ok, {IP, Port}} = inet:peername(Sock),
+            io:format("ip: ~p, port: ~p~n", [IP, Port]),
+            gen_server:cast(Parent, {register_ack, <<"registered">>});
+            % send public key
+            % wait for response, decrypt and add to list
         _ -> ok
     end,
     {noreply, State};

@@ -8,6 +8,11 @@
 %% API
 -export([http_get_fieldval/4, http_transform_req/1, http_transform_resp/1,
          http_flatten/1]).
+-export([stringify_rsa_private/1, destringify_rsa_private/1,
+         stringify_rsa_public/1, destringify_rsa_public/1]).
+
+%% Includes
+-include_lib("public_key/include/public_key.hrl"). 
 
 %% Macros
 -define(HTTP_LINESEP, "\r\n").
@@ -25,6 +30,8 @@
 %% ===================================================================
 %% API Functions
 %% ===================================================================
+
+%% HTTP requests/responses
 
 http_transform_req(Data) ->
     {FLine={Method, URI, Vsn}, HeaderFields, _Body} = http(Data),
@@ -49,6 +56,39 @@ http_get_fieldval(false, Key, {_ReqLine, HeaderFields, _Body}, Default) ->
     proplists:get_value(Key, HeaderFields, Default); % return binary
 http_get_fieldval(true, Key, {_ReqLine, HeaderFields, _Body}, Default) ->
     binary_to_list(proplists:get_value(Key, HeaderFields, Default)). % return stringified
+
+%% RSA Keys
+
+stringify_rsa_private(#'RSAPrivateKey'{version=_Version, modulus=Modulus, publicExponent=PublicExponent,
+                                       privateExponent=PrivateExponent, prime1=Prime1, prime2=Prime2,
+                                       exponent1=Exponent1, exponent2=Exponent2, coefficient=Coefficient,
+                                       otherPrimeInfos=_OtherPrimeInfos}) ->
+    M = integer_to_list(Modulus),
+    PubE = integer_to_list(PublicExponent),
+    PrivE = integer_to_list(PrivateExponent),
+    P1 = integer_to_list(Prime1),
+    P2 = integer_to_list(Prime2),
+    E1 = integer_to_list(Exponent1),
+    E2 = integer_to_list(Exponent2),
+    C = integer_to_list(Coefficient),
+    M ++ "," ++ PubE ++ "," ++ PrivE ++ "," ++ P1 ++ "," ++ P2 ++ "," ++
+    E1 ++ "," ++ E2 ++ "," ++ C.
+
+destringify_rsa_private(RSAPrivStr) ->
+    [M, PubE, PrivE, P1, P2, E1, E2, C] = string:tokens(RSAPrivStr, ","),
+    #'RSAPrivateKey'{version='two-prime', modulus=list_to_integer(M), publicExponent=list_to_integer(PubE),
+                     privateExponent=list_to_integer(PrivE), prime1=list_to_integer(P1),
+                     prime2=list_to_integer(P2), exponent1=list_to_integer(E1), exponent2=list_to_integer(E2),
+                     coefficient=list_to_integer(C)}.
+
+stringify_rsa_public(#'RSAPublicKey'{modulus=Modulus, publicExponent=PublicExponent}) ->
+    M = integer_to_list(Modulus),
+    PubE = integer_to_list(PublicExponent),
+    M ++ "," ++ PubE.
+
+destringify_rsa_public(RSAPubStr) ->
+    [M, PubE] = string:tokens(RSAPubStr, ","),
+    #'RSAPublicKey'{modulus=list_to_integer(M), publicExponent=list_to_integer(PubE)}.
 
 
 %% ===================================================================

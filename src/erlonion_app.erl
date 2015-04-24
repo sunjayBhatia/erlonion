@@ -7,7 +7,11 @@
 -behaviour(application).
 
 %% Application callbacks
--export([start/2, stop/1, recv_loop/4, get_env_val/2]).
+-export([start/2, stop/1, recv_loop/4, get_env_val/2,
+         pub_encrypt_message/2]).
+
+%% Macros
+-define(NUM_AESKEY_BYTES, 32).
 
 
 %% ===================================================================
@@ -15,10 +19,18 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
-    % get encryption key seed and generate key
-
     io:format("start erlonion_app~n", []),
-    % local storage for connected process info
+    case get_env_val(rsa_pass, "") of
+        "" -> RSAPass = "", io:format("error, need rsa password~n"); % exit and die
+        RSAPass -> ok
+    end,
+    {ok, RSAPrivPem} = file:read_file("keys/private.pem"),
+    [RSAPrivEntry] = public_key:pem_decode(RSAPrivPem),
+    PrivKey = public_key:pem_entry_decode(RSAPrivEntry, RSAPass),
+    {ok, RSAPubPem} = file:read_file("keys/public.pem"),
+    [RSAPubEntry] = public_key:pem_decode(RSAPubPem),
+    PubKey = public_key:pem_entry_decode(RSAPubEntry),
+    AESKey = crypto:strong_rand_bytes(?NUM_AESKEY_BYTES),
     % ranch options
     Ref = erlonion_listener,
     NbAcceptors = get_env_val(num_acceptors, 20),
@@ -31,11 +43,11 @@ start(_StartType, _StartArgs) ->
                        erlonion_pathnodes = ets:new(erlonion_pathnodes, TableOpts),
                        erlonion_dir;
                    path ->
-                       ok = erlonion_path:register_node(Transport),
+                       ok = erlonion_path:register_node(Transport, PrivKey, PubKey, AESKey),
                        erlonion_path;
                    _ -> error % print error message and die
                end,
-    ProtoOpts = [],
+    ProtoOpts = [{priv_key, PrivKey}, {pub_key, PubKey}, {aes_key, AESKey}],
     {ok, _Pid} = ranch:start_listener(Ref, NbAcceptors, Transport, TransOpts, Protocol, ProtoOpts),
     io:format("started ranch listener~n", []),
     erlonion_sup:start_link().
@@ -46,11 +58,8 @@ stop(_State) ->
 recv_loop(Transport, SockRec, Timeout, RetData) ->
     case Transport:recv(SockRec, 0, Timeout) of
         {ok, Data} ->
-            io:format("got some data~n"),
             recv_loop(Transport, SockRec, Timeout, <<RetData/binary, Data/binary>>);
-        _ ->
-            io:format("error or end of stream~n"),
-            RetData
+        _ -> RetData
     end.
 
 get_env_val(Key, Default) ->
@@ -58,3 +67,7 @@ get_env_val(Key, Default) ->
         {ok, Val} -> Val;
         _ -> Default
     end.
+
+pub_encrypt_message(PubKey, MessageParts) ->
+    Message = string:join(MessageParts, ";"),
+    crypto:public_encrypt(rsa, <<Message/binary>>, PubKey, rsa_pkcs1_padding).
