@@ -38,7 +38,7 @@ register_node(Transport, PrivKey, PubKey, AESKey) ->
             DirPubKeyBin = erlonion_app:recv_loop(Transport, NewSock, 2000, <<>>),
             DirPubKey = erlonion_parse:destringify_rsa_public(binary_to_list(DirPubKeyBin)),
             PrivKeyStr = erlonion_parse:stringify_rsa_private(PrivKey),
-            PubKeyStr = erlonion_parse:stringify_rsa_private(PubKey),
+            PubKeyStr = erlonion_parse:stringify_rsa_public(PubKey),
             AESKeyStr = binary_to_list(AESKey),
             RegMessage = erlonion_app:pub_encrypt_message(DirPubKey, [PrivKeyStr, PubKeyStr, AESKeyStr]),
             Transport:send(NewSock, RegMessage);
