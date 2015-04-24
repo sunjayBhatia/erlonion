@@ -17,7 +17,7 @@
 -define(TIMEOUT, 5000).
 -define(RECV_TIMEOUT, 1000).
 -define(TCP_OPTS, [binary, {active, false}, {nodelay, true}, {reuseaddr, true}, {packet, raw}]).
--define(HTTP_SOCK, 80).
+-define(HTTP_PORT, 80).
 
 
 %% ===================================================================
@@ -32,41 +32,61 @@ start_link() ->
 %% Gen Server Callbacks
 %% ===================================================================
 
--record(state, {parent, socket, transport}).
-
 init(_) ->
-    {ok, #state{parent=none, socket=none, transport=none}}.
+    {ok, []}.
 
 handle_info(_Msg, State) ->
     {noreply, State}.
 
-handle_cast({tcp, Parent, Data, Transport}, State) ->
-    % io:format("request: ~p~n", [Data]),
-    TransReq = erlonion_parse:http_transform_req(Data),
-    HostName = erlonion_parse:http_get_fieldval(true, <<"Host">>, TransReq, <<>>),
-    case inet:gethostbyname(HostName) of
-        {ok, {hostent, HName, _, _, _, _}} ->
-            case gen_tcp:connect(HName, ?HTTP_SOCK, ?TCP_OPTS, ?TIMEOUT) of
-                {ok, NewSock} ->
-                    Transport:send(NewSock, erlonion_parse:http_flatten(TransReq)),
-                    Resp = erlonion_app:recv_loop(Transport, NewSock, ?RECV_TIMEOUT, <<>>),
-                    % io:format("response: ~p~n", [Resp]),
-                    case Resp of
-                        <<"HTTP", _Rest/binary>> ->
-                            TransResp = erlonion_parse:http_transform_resp(Resp),
-                            gen_server:cast(Parent, {http_response, erlonion_parse:http_flatten(TransResp)});
-                        _ -> gen_server:cast(Parent, {http_response, Resp})
-                    end,
-                    NewState = State#state{parent=Parent, socket=NewSock, transport=Transport};
-                _ ->
-                    NewState = State#state{socket=none, transport=Transport},
-                    gen_server:cast(Parent, timeout)
-            end;
-        _ ->
-            NewState = State#state{socket=none, transport=Transport},
-            gen_server:cast(Parent, invalid_host)
+handle_cast({tcp, Parent, Data, Transport, {DirIP, DirPort}, PrivKey, PubKey, AESKey}, State) ->
+    case Data of
+        <<"GET", _Rest/binary>> -> Decrypt = false;
+        <<"HEAD", _Rest/binary>> -> Decrypt = false;
+        <<"POST", _Rest/binary>> -> Decrypt = false;
+        <<"PUT", _Rest/binary>> -> Decrypt = false;
+        <<"DELETE", _Rest/binary>> -> Decrypt = false;
+        <<"TRACE", _Rest/binary>> -> Decrypt = false;
+        <<"CONNECT", _Rest/binary>> -> Decrypt = false;
+        _ -> Decrypt = true
     end,
-    {noreply, NewState};
+    case Decrypt of
+        true -> ok;
+        false ->
+            case gen_tcp:connect(DirIP, DirPort, ?TCP_OPTS, ?TIMEOUT) of
+                {ok, DirSock} ->
+                    Transport:send(DirSock, <<"PATH">>),
+                    PathBin = erlonion_app:recv_loop(Transport, DirSock, 2000, <<>>),
+                    PathNodes = binary_to_term(PathBin),
+                    io:format("path nodes ~p~n", [PathNodes]),
+                    TransReq = erlonion_parse:http_transform_req(Data),
+                    HostName = erlonion_parse:http_get_fieldval(true, <<"Host">>, TransReq, <<>>),
+                    case inet:gethostbyname(HostName) of
+                        {ok, {hostent, _, _, _, _, [HostIP | _]}} -> ok;
+                            % LayeredReq = erlonion_app:layer_encrypt_request(PathNodes, HostIP, TransReq)
+
+
+                            % case gen_tcp:connect(HName, ?HTTP_PORT, ?TCP_OPTS, ?TIMEOUT) of
+                            %     {ok, NewSock} ->
+                            %         Transport:send(NewSock, erlonion_parse:http_flatten(TransReq)),
+                            %         Resp = erlonion_app:recv_loop(Transport, NewSock, ?RECV_TIMEOUT, <<>>),
+                            %         % io:format("response: ~p~n", [Resp]),
+                            %         case Resp of
+                            %             <<"HTTP", _Rest/binary>> ->
+                            %                 TransResp = erlonion_parse:http_transform_resp(Resp),
+                            %                 gen_server:cast(Parent, {http_response, erlonion_parse:http_flatten(TransResp)});
+                            %             _ -> gen_server:cast(Parent, {http_response, Resp})
+                            %         end,
+                            %         NewState = State#state{parent=Parent, socket=NewSock, transport=Transport};
+                            %     _ ->
+                            %         NewState = State#state{socket=none, transport=Transport},
+                            %         gen_server:cast(Parent, timeout)
+                            % end;
+                        _ -> gen_server:cast(Parent, invalid_host)
+                    end;
+                _ -> gen_server:cast(Parent, dir_node_unavailable)
+            end
+    end,
+    {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 

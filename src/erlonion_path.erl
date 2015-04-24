@@ -8,7 +8,7 @@
 -behaviour(ranch_protocol).
 
 %% API
--export([start_link/4, register_node/4]).
+-export([start_link/4, register_node/5]).
 
 %% Gen Server Callbacks
 -export([init/1, init/4, handle_call/3, handle_cast/2, handle_info/2,
@@ -27,51 +27,53 @@
 start_link(Ref, Sock, Transport, Opts) ->
     proc_lib:start_link(?MODULE, init, [Ref, Sock, Transport, Opts]).
 
-register_node(Transport, PrivKey, PubKey, AESKey) ->
+register_node(Transport, PrivKey, PubKey, AESKey, IVec) ->
     {IpAddr, Port} = case erlonion_app:get_env_val(dir_addr, {error, none}) of
                            {error, none} -> {error, none}; % throw/print error and die
                            DirAddr -> DirAddr
                        end,
     case gen_tcp:connect(IpAddr, Port, ?TCP_OPTS, ?TIMEOUT) of
         {ok, NewSock} ->
-            Transport:send(NewSock, <<"REGISTER">>),
-            DirPubKeyBin = erlonion_app:recv_loop(Transport, NewSock, 2000, <<>>),
-            DirPubKey = erlonion_parse:destringify_rsa_public(binary_to_list(DirPubKeyBin)),
-            PrivKeyStr = erlonion_parse:stringify_rsa_private(PrivKey),
-            PubKeyStr = erlonion_parse:stringify_rsa_public(PubKey),
-            AESKeyStr = binary_to_list(AESKey),
-            RegMessage = erlonion_app:pub_encrypt_message(DirPubKey, [PrivKeyStr, PubKeyStr, AESKeyStr]),
-            Transport:send(NewSock, RegMessage);
+            PubKeyBin = list_to_binary(erlonion_parse:stringify_rsa_public(PubKey)),
+            Transport:send(NewSock, <<"REGISTER", PubKeyBin/binary>>),
+            DirAESKeyBin = erlonion_app:recv_loop(Transport, NewSock, 2000, <<>>),
+            DirAESKey = erlonion_app:priv_decrypt_message(PrivKey, DirAESKeyBin),
+            AESKeyCrypt = crypto:block_encrypt(aes_cfb128, DirAESKey, IVec, AESKey),
+            Transport:send(NewSock, <<AESKeyCrypt/binary>>),
+            io:format("AESKey: ~p~n", [AESKey]);
         _ -> % print error and die
             io:format("timed out or error connecting to directory node~n")
     end,
-    ok.
+    {IpAddr, Port}.
 
 
 %% ===================================================================
 %% Gen Server Callbacks
 %% ===================================================================
 
--record(state, {socket, transport, msghandlers}).
+-record(state, {socket, transport, dir_addr, priv_key, pub_key, aes_key, msghandlers}).
 
 init([]) -> {ok, undefined}.
 
-init(Ref, Sock, Transport, _Opts) ->
+init(Ref, Sock, Transport, [{dir_addr, DirAddr}, {priv_key, PrivKey}, {pub_key, PubKey}, {aes_key, AESKey}]) ->
     ok = proc_lib:init_ack({ok, self()}),
     ok = ranch:accept_ack(Ref),
     ok = Transport:setopts(Sock, [{active, once}]),
     gen_server:enter_loop(?MODULE, [],
-        #state{socket=Sock, transport=Transport, msghandlers=[]},
+        #state{socket=Sock, transport=Transport, dir_addr=DirAddr, priv_key=PrivKey, pub_key=PubKey,
+               aes_key=AESKey, msghandlers=[]},
         ?TIMEOUT).
 
-handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport, msghandlers=MsgHandlers}) ->
+handle_info({tcp, Sock, Data}, State) ->
+    Transport = State#state.transport, MsgHandlers = State#state.msghandlers,
     DataRest = erlonion_app:recv_loop(Transport, Sock, ?RECV_TIMEOUT, <<>>),
-    % ask for a path
     ok = Transport:setopts(Sock, [{active, once}]),
     {ok, MsgHandlerPid, MsgHandlerId} = erlonion_sup:start_path_msghandler(),
-    gen_server:cast(MsgHandlerPid, {tcp, self(), <<Data/binary, DataRest/binary>>, Transport}),
+    gen_server:cast(MsgHandlerPid, {tcp, self(), <<Data/binary, DataRest/binary>>, Transport,
+                                    State#state.dir_addr, State#state.priv_key, State#state.pub_key,
+                                    State#state.aes_key}),
     {noreply, State#state{msghandlers=[MsgHandlerId | MsgHandlers]}, ?TIMEOUT};
-handle_info(Info, State=#state{socket=_, transport=_, msghandlers=MsgHandlers}) ->
+handle_info(Info, State) ->
     % lists:map(fun erlonion_sup:stop_child/1, MsgHandlers),
     case Info of
         {tcp_closed, _Sock} -> {stop, normal, State};
@@ -79,8 +81,9 @@ handle_info(Info, State=#state{socket=_, transport=_, msghandlers=MsgHandlers}) 
         _ -> {stop, normal, State}
     end.
 
-handle_cast({http_response, Data}, State=#state{socket=Sock, transport=Transport, msghandlers=_}) ->
-    Transport:send(Sock, Data),
+handle_cast({http_response, Data}, State) ->
+    Transport = State#state.transport,
+    Transport:send(State#state.socket, Data),
     {noreply, State};
 handle_cast(_Msg, State) ->
     {stop, normal, State}.

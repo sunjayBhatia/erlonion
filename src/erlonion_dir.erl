@@ -35,38 +35,37 @@ start_link(Ref, Sock, Transport, Opts) ->
 %% Gen Server Callbacks
 %% ===================================================================
 
--record(state, {socket, transport, priv_key, pub_key}).
+-record(state, {socket, transport, aes_key, i_vec}).
 
 init([]) -> {ok, undefined}.
 
-init(Ref, Sock, Transport, [{priv_key, PrivKey}, {pub_key, PubKey}, _]) ->
+init(Ref, Sock, Transport, [{aes_key, AESKey}, {i_vec, IVec}]) ->
     ok = proc_lib:init_ack({ok, self()}),
     ok = ranch:accept_ack(Ref),
     ok = Transport:setopts(Sock, [{active, once}]),
     gen_server:enter_loop(?MODULE, [],
-        #state{socket=Sock, transport=Transport, priv_key=PrivKey, pub_key=PubKey},
+        #state{socket=Sock, transport=Transport, aes_key=AESKey, i_vec=IVec},
         ?TIMEOUT).
 
-handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport,
-                                            priv_key=#'RSAPrivateKey'{version=_V,
-                                                       modulus=M, publicExponent=PubE,
-                                                       privateExponent=PrivE, prime1=P1, prime2=P2,
-                                                       exponent1=E1, exponent2=E2, coefficient=C,
-                                                       otherPrimeInfos=_OtherPrimeInfos}, pub_key=PubKey}) ->
+handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport, aes_key=AESKey,
+                                            i_vec=IVec}) ->
     DataRest = erlonion_app:recv_loop(Transport, Sock, ?RECV_TIMEOUT, <<>>),
     Req = <<Data/binary, DataRest/binary>>,
     case Req of
-        <<"REGISTER">> ->
+        <<"REGISTER", PathPubKeyBin/binary>> ->
             {ok, {IP, Port}} = inet:peername(Sock),
             io:format("ip: ~p, port: ~p~n", [IP, Port]),
-            PubKeyStr = erlonion_parse:stringify_rsa_public(PubKey),
-            Transport:send(Sock, list_to_binary(PubKeyStr)),
-            RegMessageCrypt = erlonion_app:recv_loop(Transport, Sock, ?RECV_TIMEOUT, <<>>),
-            PrivKeyList = [PubE, M, PrivE, P1, P2, E1, E2, C],
-            RegMessageBin = crypto:private_decrypt(rsa, RegMessageCrypt, PrivKeyList, rsa_pkcs1_padding),
-            [PrivKeyStr, PubKeyStr, AESKeyStr] = string:tokens(binary_to_list(RegMessageBin), ";"),
-            ets:insert(?TAB, {IP, Port, PrivKeyStr, PubKeyStr, AESKeyStr}),
+            PathPubKey = erlonion_parse:destringify_rsa_public(binary_to_list(PathPubKeyBin)),
+            CryptMessage = erlonion_app:pub_encrypt_message(PathPubKey, AESKey),
+            Transport:send(Sock, CryptMessage),
+            PathAESKeyCrypt = erlonion_app:recv_loop(Transport, Sock, 5000, <<>>),
+            PathAESKey = crypto:block_decrypt(aes_cfb128, AESKey, IVec, PathAESKeyCrypt),
+            ets:insert(?TAB, {IP, Port, PathAESKey}),
             io:format("path nodes: ~p~n", [ets:tab2list(?TAB)]);
+        <<"PATH">> ->
+            {ok, {IP, Port}} = inet:peername(Sock),
+            Path = generate_path(IP, Port),
+            Transport:send(Sock, term_to_binary(Path));
         _ -> ok
     end,
     {stop, normal, State};
@@ -88,3 +87,26 @@ terminate(_Reason, _State) -> ok.
 
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
+
+%% ===================================================================
+%% Internal Functions
+%% ===================================================================
+
+generate_path(IP, Port) ->
+    PN = ets:tab2list(?TAB),
+    PathNodes = lists:filter(fun({I, P, _}) ->  case {I, P} of {IP, Port} -> false; _ -> true end end, PN),
+    ShuffledPN = shuffle_pathnodes(PathNodes),
+    PathLength = random:uniform(length(ShuffledPN)),
+    lists:sublist(ShuffledPN, PathLength).
+
+shuffle_pathnodes([]) -> [];
+shuffle_pathnodes([X]) -> [X];
+shuffle_pathnodes(Xs) -> shuffle_pathnodes(Xs, length(Xs), []).
+shuffle_pathnodes([], 0, Shuffled) -> Shuffled;
+shuffle_pathnodes(Xs, Len, Shuffled) ->
+    {X, Rest} = nth_rest(random:uniform(Len), Xs),
+    shuffle_pathnodes(Rest, Len - 1, [X | Shuffled]).
+
+nth_rest(N, List) -> nth_rest(N, List, []).
+nth_rest(1, [E|List], Prefix) -> {E, Prefix ++ List};
+nth_rest(N, [E|List], Prefix) -> nth_rest(N - 1, List, [E|Prefix]).
