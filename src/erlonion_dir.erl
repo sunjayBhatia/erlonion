@@ -47,20 +47,21 @@ init(Ref, Sock, Transport, [{priv_key, PrivKey}, {pub_key, PubKey}, _]) ->
 handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport,
                                             priv_key=PrivKey, pub_key=PubKey}) ->
     DataRest = erlonion_app:recv_loop(Transport, Sock, ?RECV_TIMEOUT, <<>>),
-    ok = Transport:setopts(Sock, [{active, once}]),
-    {ok, MsgHandlerPid, MsgHandlerId} = erlonion_sup:start_dir_msghandler(),
     Req = <<Data/binary, DataRest/binary>>,
     case Req of
         <<"REGISTER">> ->
             {ok, {IP, Port}} = inet:peername(Sock),
             io:format("ip: ~p, port: ~p~n", [IP, Port]),
             PubKeyStr = erlonion_parse:stringify_rsa_public(PubKey),
-            Transport:send(Sock, <<PubKeyStr/binary>>);
-            % send public key
-            % wait for response, decrypt and add to list
+            Transport:send(Sock, list_to_binary(PubKeyStr)),
+            RegMessageCrypt = erlonion_app:recv_loop(Transport, Sock, ?RECV_TIMEOUT, <<>>),
+            RegMessageBin = crypto:private_decrypt(rsa, RegMessageCrypt, PrivKey, rsa_pkcs1_padding),
+            [PrivKeyStr, PubKeyStr, AESKeyStr] = string:tokens(binary_to_list(RegMessageBin), ";"),
+            ets:insert(?TAB, {IP, Port, PrivKeyStr, PubKeyStr, AESKeyStr}),
+            io:format("path nodes: ~p~n", [ets:tab2list(?TAB)]);
         _ -> ok
     end,
-    {noreply, State, ?TIMEOUT};
+    {stop, normal, State};
 handle_info({tcp_closed, _Sock}, State) ->
     {stop, normal, State};
 handle_info({tcp_error, _, Reason}, State) ->

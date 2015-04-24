@@ -5,14 +5,14 @@
 
 -module(erlonion_parse).
 
+%% Includes
+-include_lib("public_key/include/public_key.hrl").
+
 %% API
 -export([http_get_fieldval/4, http_transform_req/1, http_transform_resp/1,
          http_flatten/1]).
 -export([stringify_rsa_private/1, destringify_rsa_private/1,
          stringify_rsa_public/1, destringify_rsa_public/1]).
-
-%% Includes
--include_lib("public_key/include/public_key.hrl"). 
 
 %% Macros
 -define(HTTP_LINESEP, "\r\n").

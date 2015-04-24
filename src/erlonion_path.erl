@@ -40,8 +40,8 @@ register_node(Transport, PrivKey, PubKey, AESKey) ->
             PrivKeyStr = erlonion_parse:stringify_rsa_private(PrivKey),
             PubKeyStr = erlonion_parse:stringify_rsa_private(PubKey),
             AESKeyStr = binary_to_list(AESKey),
-            Message = erlonion_app:pub_encrypt_message(DirPubKey, [PrivKeyStr, PubKeyStr, AESKeyStr]),
-            io:format("received register ack: ~p~n", [DirPubKeyBin]);
+            RegMessage = erlonion_app:pub_encrypt_message(DirPubKey, [PrivKeyStr, PubKeyStr, AESKeyStr]),
+            Transport:send(NewSock, RegMessage);
         _ -> % print error and die
             io:format("timed out or error connecting to directory node~n")
     end,

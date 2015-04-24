@@ -6,6 +6,9 @@
 -module(erlonion_app).
 -behaviour(application).
 
+%% Includes
+-include_lib("public_key/include/public_key.hrl").
+
 %% Application callbacks
 -export([start/2, stop/1, recv_loop/4, get_env_val/2,
          pub_encrypt_message/2]).
@@ -68,6 +71,6 @@ get_env_val(Key, Default) ->
         _ -> Default
     end.
 
-pub_encrypt_message(PubKey, MessageParts) ->
+pub_encrypt_message(#'RSAPublicKey'{modulus=M, publicExponent=PubE}, MessageParts) ->
     Message = string:join(MessageParts, ";"),
-    crypto:public_encrypt(rsa, <<Message/binary>>, PubKey, rsa_pkcs1_padding).
+    crypto:public_encrypt(rsa, list_to_binary(Message), [M, PubE], rsa_pkcs1_padding).
