@@ -25,7 +25,6 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
-    io:format("start erlonion_app~n", []),
     AESKey = crypto:strong_rand_bytes(?NUM_AESKEY_BYTES),
     case get_env_val(block_key_init, "") of
         "" -> IVec = ""; % print error message and die
@@ -82,7 +81,6 @@ get_env_val(Key, Default) ->
     end.
 
 pub_encrypt_message(#'RSAPublicKey'{modulus=M, publicExponent=PubE}, Message) ->
-    io:format("size of message: ~p~n", [byte_size(Message)]),
     crypto:public_encrypt(rsa, Message, [PubE, M], rsa_pkcs1_padding).
 
 priv_decrypt_message(#'RSAPrivateKey'{version=_V, modulus=M, publicExponent=PubE,

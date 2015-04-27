@@ -33,7 +33,6 @@ start_link() ->
 
 start_path_msghandler() ->
     Id = ets:update_counter(erlonion_subproc_ids, path_msghandler, 1),
-    io:format("msghandler id: ~p~n", [Id]),
     {ok, Pid} = supervisor:start_child(?MODULE, ?PATH_MSGHANDLER_CHILD(Id)),
     {ok, Pid, {erlonion_path_msghandler, Id}}.
 

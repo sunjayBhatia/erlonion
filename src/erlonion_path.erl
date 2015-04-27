@@ -40,8 +40,7 @@ register_node(Transport, PrivKey, PubKey, AESKey, IVec) ->
             DirAESKeyBin = erlonion_app:recv_loop(Transport, NewSock, 2000, <<>>),
             DirAESKey = erlonion_app:priv_decrypt_message(PrivKey, DirAESKeyBin),
             AESKeyCrypt = crypto:block_encrypt(aes_cfb128, DirAESKey, IVec, AESKey),
-            Transport:send(NewSock, <<AESKeyCrypt/binary>>),
-            io:format("AESKey: ~p~n", [AESKey]);
+            Transport:send(NewSock, <<AESKeyCrypt/binary>>);
         _ -> % print error and die
             io:format("timed out or error connecting to directory node~n")
     end,

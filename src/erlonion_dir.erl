@@ -40,7 +40,6 @@ start_link(Ref, Sock, Transport, Opts) ->
 init([]) -> {ok, undefined}.
 
 init(Ref, Sock, Transport, [{aes_key, AESKey}, {i_vec, IVec}]) ->
-    io:format("start dir proc~n"),
     ok = proc_lib:init_ack({ok, self()}),
     ok = ranch:accept_ack(Ref),
     ok = Transport:setopts(Sock, [{active, once}]),
@@ -55,18 +54,18 @@ handle_info({tcp, Sock, Data}, State=#state{socket=Sock, transport=Transport, ae
     case Req of
         <<"REGISTER", PathPubKeyBin/binary>> ->
             {ok, {IP, _}} = inet:peername(Sock),
-            io:format("ip: ~p~n", [IP]),
             PathPubKey = erlonion_parse:destringify_rsa_public(binary_to_list(PathPubKeyBin)),
             CryptMessage = erlonion_app:pub_encrypt_message(PathPubKey, AESKey),
             Transport:send(Sock, CryptMessage),
             PathAESKeyCrypt = erlonion_app:recv_loop(Transport, Sock, 5000, <<>>),
             PathAESKey = crypto:block_decrypt(aes_cfb128, AESKey, IVec, PathAESKeyCrypt),
-            ets:insert(?TAB, {IP, PathAESKey}),
-            io:format("path nodes: ~p~n", [ets:tab2list(?TAB)]);
+            ets:insert(?TAB, {IP, PathAESKey});
         <<"PATH">> ->
             {ok, {IP, _}} = inet:peername(Sock),
             Path = generate_path(IP),
-            Transport:send(Sock, term_to_binary(Path));
+            {IP, PathAESKey} = ets:lookup(?TAB, IP),
+            CryptPath = crypto:block_encrypt(aes_cfb128, PathAESKey, IVec, term_to_binary(Path)),
+            Transport:send(Sock, CryptPath);
         _ -> ok
     end,
     {stop, normal, State};

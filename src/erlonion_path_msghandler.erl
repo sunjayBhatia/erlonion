@@ -45,10 +45,10 @@ handle_cast({tcp, Parent, Data, Transport, DirIP, AESKey, IVec}, State) ->
             case gen_tcp:connect(DirIP, ?PORT, ?TCP_OPTS, ?TIMEOUT) of
                 {ok, DirSock} ->
                     Transport:send(DirSock, <<"PATH">>),
-                    PathBin = erlonion_app:recv_loop(Transport, DirSock, 2000, <<>>),
+                    CryptPathBin = erlonion_app:recv_loop(Transport, DirSock, 2000, <<>>),
+                    PathBin = crypto:block_decrypt(aes_cfb128, AESKey, IVec, CryptPathBin),
                     PathNodes = binary_to_term(PathBin),
                     [{SendIP, _} | _] = PathNodes,
-                    io:format("path nodes ~p~n", [PathNodes]),
                     TransReq = erlonion_parse:http_transform_req(Data),
                     HostName = erlonion_parse:http_get_fieldval(true, <<"Host">>, TransReq, <<>>),
                     case inet:gethostbyname(HostName) of
