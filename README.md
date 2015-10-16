@@ -24,7 +24,7 @@ This will fetch and compile all dependencies as well as build `erlonion` directo
 
         make run_dir
 
-This will fetch and compile all dependencies as well as build `erlonion` directory node
+This will fetch and compile all dependencies as well as build `erlonion` path node
 
         make run_path
 
